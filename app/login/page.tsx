@@ -26,12 +26,13 @@ export default function LoginPage() {
   // オーナー判定用リスト
   const OWNER_EMAILS = ["admin@yanbaru-drive.com", "owner@example.com"];
   const OWNER_PHONES = ["090-1234-5678", "080-0000-0000"];
+  const OWNER_PASSWORD = "yanbaruadmin";
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setLoading(true);
     // 入力値でオーナー判定
-    const isOwner = OWNER_EMAILS.includes(email) || OWNER_PHONES.includes(email);
+    const isOwner = (OWNER_EMAILS.includes(email) || OWNER_PHONES.includes(email)) && password === OWNER_PASSWORD;
     setTimeout(() => {
       if (isOwner) {
         router.push("/admin");
