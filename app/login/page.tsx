@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, Suspense } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -13,7 +13,7 @@ import { Eye, EyeOff } from "lucide-react"
 import Image from "next/image"
 import { useRouter, useSearchParams } from "next/navigation"
 
-export default function LoginPage() {
+function LoginForm() {
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
   const [loading, setLoading] = useState(false);
@@ -131,25 +131,18 @@ export default function LoginPage() {
                   </p>
                 </div>
               </div>
-
-              {/* オーナー向けログイン */}
-              <div className="mt-8 pt-6 border-t border-gray-200">
-                <div className="text-center">
-                  <p className="text-sm text-gray-600 mb-4">オーナー様はこちら</p>
-                  <Link href="/admin/login">
-                    <Button
-                      variant="outline"
-                      className="w-full bg-transparent border-yanbaru-emerald text-yanbaru-emerald hover:bg-yanbaru-emerald hover:text-white"
-                    >
-                      オーナー管理画面へ
-                    </Button>
-                  </Link>
-                </div>
-              </div>
             </CardContent>
           </Card>
         </div>
       </div>
     </>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <LoginForm />
+    </Suspense>
   )
 }

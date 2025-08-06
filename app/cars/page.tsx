@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -11,6 +11,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Car, Users, Star, Heart, Search, MapPin, SlidersHorizontal } from "lucide-react"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
+interface Car {
+  id: number;
+  name: string;
+  image: string;
+  price: number;
+  passengers: number;
+  transmission: string;
+  rating: number;
+  reviews: number;
+  available: number;
+  features: string[];
+  location: string;
+}
+
 export default function CarsPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [showSearch, setShowSearch] = useState(false)
@@ -18,8 +32,34 @@ export default function CarsPage() {
   const [transmissionFilter, setTransmissionFilter] = useState("all")
   const [passengersFilter, setPassengersFilter] = useState("all")
   const [sortBy, setSortBy] = useState("price-low")
+  const [cars, setCars] = useState<Car[]>([]);
+  const [loading, setLoading] = useState(true)
 
-  const cars = [
+  useEffect(() => {
+    const fetchVehicles = async () => {
+      try {
+        const response = await fetch('/api/vehicles')
+        const vehicles = await response.json()
+        
+        const carsData = vehicles.map((vehicle: any) => ({
+          id: vehicle.id,
+          name: vehicle.name,
+          image: vehicle.image,
+          price: vehicle.price,
+          passengers: vehicle.passengers,
+          transmission: vehicle.transmission,
+          rating: vehicle.rating,
+          reviews: vehicle.reviews,
+          available: vehicle.available,
+          features: vehicle.features || ["カーナビ", "ETC"],
+          location: vehicle.location || "名護店",
+        }))
+        
+        setCars(carsData)
+      } catch (error) {
+        console.error('Error fetching vehicles:', error)
+        // フォールバック用のデータ
+        setCars([
     {
       id: 1,
       name: "トヨタ プリウス",
@@ -59,46 +99,14 @@ export default function CarsPage() {
       features: ["ファミリー向け", "カーナビ", "ETC", "両側スライドドア"],
       location: "本部店",
     },
-    {
-      id: 4,
-      name: "スズキ ジムニー",
-      image: "/placeholder.svg?height=200&width=300",
-      price: 7200,
-      passengers: 4,
-      transmission: "MT",
-      rating: 4.7,
-      reviews: 15,
-      available: 2,
-      features: ["4WD", "オフロード", "カーナビ"],
-      location: "名護店",
-    },
-    {
-      id: 5,
-      name: "トヨタ ヴォクシー",
-      image: "/placeholder.svg?height=200&width=300",
-      price: 9200,
-      passengers: 8,
-      transmission: "AT",
-      rating: 4.5,
-      reviews: 22,
-      available: 1,
-      features: ["ファミリー向け", "カーナビ", "ETC", "両側スライドドア", "バックカメラ"],
-      location: "本部店",
-    },
-    {
-      id: 6,
-      name: "ホンダ ヴェゼル",
-      image: "/placeholder.svg?height=200&width=300",
-      price: 6800,
-      passengers: 5,
-      transmission: "AT",
-      rating: 4.4,
-      reviews: 19,
-      available: 3,
-      features: ["SUV", "ハイブリッド", "カーナビ", "ETC"],
-      location: "名護店",
-    },
-  ]
+        ])
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchVehicles()
+  }, [])
 
   const filteredAndSortedCars = cars
     .filter((car) => {

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { use } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -29,8 +30,12 @@ import {
 import { format } from "date-fns"
 import { ja } from "date-fns/locale"
 import { supabase } from "../../../lib/supabaseClient"
+import CustomCalendar from "../../components/CustomCalendar"
+import { useAuth } from "../../contexts/AuthContext"
 
-export default function CarDetailPage({ params }: { params: { id: string } }) {
+export default function CarDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const resolvedParams = use(params)
+  const { user, loading } = useAuth()
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
   const [startDate, setStartDate] = useState<Date>()
   const [endDate, setEndDate] = useState<Date>()
@@ -38,11 +43,11 @@ export default function CarDetailPage({ params }: { params: { id: string } }) {
   const [endTime, setEndTime] = useState("18:00")
   const [selectedOptions, setSelectedOptions] = useState<string[]>([])
   const [agreedToTerms, setAgreedToTerms] = useState(false)
-  const [user, setUser] = useState(null)
+  const [startDateOpen, setStartDateOpen] = useState(false)
+  const [endDateOpen, setEndDateOpen] = useState(false)
 
-  // Mock data - 実際のアプリではAPIから取得
-  const car = {
-    id: Number.parseInt(params.id),
+  const [car, setCar] = useState({
+    id: Number.parseInt(resolvedParams.id),
     name: "トヨタ プリウス",
     images: [
       "/placeholder.svg?height=400&width=600",
@@ -71,7 +76,53 @@ export default function CarDetailPage({ params }: { params: { id: string } }) {
       doors: "5ドア",
       luggage: "大",
     },
-  }
+  })
+
+  // 車両データを取得
+  useEffect(() => {
+    const fetchVehicle = async () => {
+      try {
+        const response = await fetch('/api/vehicles')
+        const vehicles = await response.json()
+        const vehicle = vehicles.find((v: any) => v.id === resolvedParams.id)
+        
+        if (vehicle) {
+          console.log('Fetched vehicle:', vehicle)
+          console.log('Vehicle image URL:', vehicle.image)
+          
+          setCar({
+            id: vehicle.id,
+            name: vehicle.name,
+            images: [vehicle.image || "https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?w=800&h=600&fit=crop"], // 1枚の画像のみ
+            price: vehicle.price,
+            passengers: vehicle.passengers,
+            transmission: vehicle.transmission,
+            rating: vehicle.rating,
+            reviews: vehicle.reviews,
+            available: vehicle.available,
+            location: vehicle.location || "名護店",
+            description: vehicle.description || "燃費性能に優れたハイブリッド車です。静かで快適な乗り心地で、沖縄の美しい景色をゆったりとお楽しみいただけます。",
+            features: [
+              { icon: <Wifi className="h-4 w-4" />, name: "カーナビ" },
+              { icon: <Shield className="h-4 w-4" />, name: "ETC" },
+              { icon: <Camera className="h-4 w-4" />, name: "バックカメラ" },
+              { icon: <Navigation className="h-4 w-4" />, name: "ハイブリッド" },
+            ],
+            specifications: {
+              fuel: vehicle.fuel_type || "ハイブリッド",
+              engine: vehicle.engine_size || "1.8L",
+              doors: `${vehicle.doors || 5}ドア`,
+              luggage: vehicle.luggage_size || "大",
+            },
+          })
+        }
+      } catch (error) {
+        console.error('Error fetching vehicle:', error)
+      }
+    }
+
+    fetchVehicle()
+  }, [resolvedParams.id])
 
   const options = [
     { id: "child-seat", name: "チャイルドシート", price: 500 },
@@ -80,29 +131,25 @@ export default function CarDetailPage({ params }: { params: { id: string } }) {
     { id: "snow-chains", name: "スノーチェーン", price: 800 },
   ]
 
-  const reviews = [
-    {
-      id: 1,
-      user: "田中さん",
+  const [reviews, setReviews] = useState<Array<{
+    id: number
+    user: string
+    rating: number
+    date: string
+    comment: string
+  }>>([])
+  const [reviewsLoading, setReviewsLoading] = useState(true)
+  const [showReviewForm, setShowReviewForm] = useState(false)
+  const [newReview, setNewReview] = useState({
       rating: 5,
-      date: "2024/01/10",
-      comment: "とても綺麗な車で、燃費も良く快適でした。スタッフの対応も丁寧で満足です。",
-    },
-    {
-      id: 2,
-      user: "佐藤さん",
-      rating: 4,
-      date: "2024/01/05",
-      comment: "カーナビが使いやすく、初めての沖縄旅行でも安心して運転できました。",
-    },
-    {
-      id: 3,
-      user: "山田さん",
-      rating: 5,
-      date: "2023/12/28",
-      comment: "家族4人でちょうど良いサイズでした。また利用したいと思います。",
-    },
-  ]
+    comment: ''
+  })
+
+  // デバッグ用：newReviewの状態変化を監視
+  useEffect(() => {
+    console.log('newReview state changed:', newReview)
+  }, [newReview])
+  const [submittingReview, setSubmittingReview] = useState(false)
 
   const calculateTotal = () => {
     if (!startDate || !endDate) return 0
@@ -129,46 +176,160 @@ export default function CarDetailPage({ params }: { params: { id: string } }) {
     setSelectedOptions((prev) => (prev.includes(optionId) ? prev.filter((id) => id !== optionId) : [...prev, optionId]))
   }
 
+  // レビューデータを取得
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setUser(data.user))
-  }, [])
+    const fetchReviews = async () => {
+      try {
+        setReviewsLoading(true)
+        const response = await fetch(`/api/reviews?vehicleId=${resolvedParams.id}`)
+        if (response.ok) {
+          const reviewsData = await response.json()
+          setReviews(reviewsData)
+        } else {
+          console.error('Failed to fetch reviews')
+          // フォールバックとしてデフォルトのレビューを設定
+          setReviews([
+            {
+              id: 1,
+              user: "田中さん",
+              rating: 5,
+              date: "2024/01/10",
+              comment: "とても綺麗な車で、燃費も良く快適でした。スタッフの対応も丁寧で満足です。",
+            },
+            {
+              id: 2,
+              user: "佐藤さん",
+              rating: 4,
+              date: "2024/01/05",
+              comment: "カーナビが使いやすく、初めての沖縄旅行でも安心して運転できました。",
+            },
+            {
+              id: 3,
+              user: "山田さん",
+              rating: 5,
+              date: "2023/12/28",
+              comment: "家族4人でちょうど良いサイズでした。また利用したいと思います。",
+            },
+          ])
+        }
+      } catch (error) {
+        console.error('Error fetching reviews:', error)
+        // エラー時もデフォルトのレビューを設定
+        setReviews([
+          {
+            id: 1,
+            user: "田中さん",
+            rating: 5,
+            date: "2024/01/10",
+            comment: "とても綺麗な車で、燃費も良く快適でした。スタッフの対応も丁寧で満足です。",
+          },
+          {
+            id: 2,
+            user: "佐藤さん",
+            rating: 4,
+            date: "2024/01/05",
+            comment: "カーナビが使いやすく、初めての沖縄旅行でも安心して運転できました。",
+          },
+          {
+            id: 3,
+            user: "山田さん",
+            rating: 5,
+            date: "2023/12/28",
+            comment: "家族4人でちょうど良いサイズでした。また利用したいと思います。",
+          },
+        ])
+      } finally {
+        setReviewsLoading(false)
+      }
+    }
+    fetchReviews()
+  }, [resolvedParams.id])
 
-  const handleSubmit = async (e) => {
+  // レビュー投稿
+  const handleReviewSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    console.log('Submitting review - User state:', user)
+    
+    if (!newReview.comment.trim()) {
+      alert('コメントを入力してください')
+      return
+    }
+
+    setSubmittingReview(true)
+    try {
+      const response = await fetch('/api/reviews', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          vehicleId: resolvedParams.id,
+          userId: user?.id || null, // ログインしていない場合はnull
+          rating: newReview.rating,
+          comment: newReview.comment.trim()
+        })
+      })
+
+      if (response.ok) {
+        // レビューを再取得
+        const reviewsResponse = await fetch(`/api/reviews?vehicleId=${resolvedParams.id}`)
+        if (reviewsResponse.ok) {
+          const reviewsData = await reviewsResponse.json()
+          setReviews(reviewsData)
+        }
+        
+        setNewReview({ rating: 5, comment: '' })
+        setShowReviewForm(false)
+        alert('レビューを投稿しました')
+      } else {
+        const errorData = await response.json()
+        console.error('Review submission error:', errorData)
+        alert(`レビューの投稿に失敗しました: ${errorData.error || '不明なエラー'}`)
+      }
+    } catch (error) {
+      console.error('Error submitting review:', error)
+      alert('レビューの投稿に失敗しました')
+    } finally {
+      setSubmittingReview(false)
+    }
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!startDate || !endDate) {
+      alert("日付を選択してください")
+      return
+    }
+
+    const startDateObj = new Date(startDate)
+    const endDateObj = new Date(endDate)
+    const days = Math.ceil((endDateObj.getTime() - startDateObj.getTime()) / (1000 * 60 * 60 * 24))
+
     const { error } = await supabase.from("reservations").insert([
-      { user_id: user.id, car_id: car.id, start_date: startDate, end_date: endDate, status: "pending" }
+      {
+        user_id: user?.id,
+        car_id: car.id,
+        start_date: startDateObj.toISOString().split('T')[0],
+        end_date: endDateObj.toISOString().split('T')[0],
+        total_amount: calculateTotal(),
+        status: "pending",
+      }
     ])
+    
     if (error) {
       console.error("予約に失敗しました: " + error.message)
+      alert("予約に失敗しました: " + error.message)
     } else {
       console.log("予約が完了しました！")
       setStartDate(undefined)
       setEndDate(undefined)
+      setSelectedOptions([])
+      alert("予約が完了しました！")
     }
   }
 
   return (
     <div className="min-h-screen bg-yanbaru-sand">
-      {/* Header */}
-      <header className="bg-yanbaru-emerald shadow-sm border-b border-yanbaru-emerald/20">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <Link href="/" className="flex items-center space-x-3">
-              <Image src="/logo.png" alt="やんばるドライブ ロゴ" width={32} height={32} className="rounded" />
-              <h1 className="text-2xl font-bold text-white">やんばるドライブ</h1>
-            </Link>
-            <nav className="flex items-center space-x-4">
-              <Link href="/cars" className="text-white/80 hover:text-white transition-colors">
-                車両一覧
-              </Link>
-              <Link href="/login" className="text-white/80 hover:text-white transition-colors">
-                ログイン
-              </Link>
-            </nav>
-          </div>
-        </div>
-      </header>
-
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Breadcrumb */}
         <nav className="flex items-center space-x-2 text-sm text-yanbaru-charcoal/70 mb-6">
@@ -191,50 +352,18 @@ export default function CarDetailPage({ params }: { params: { id: string } }) {
               <CardContent className="p-0">
                 <div className="relative">
                   <Image
-                    src={car.images[currentImageIndex] || "/placeholder.svg"}
+                    src={car.images[0] || "https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?w=800&h=600&fit=crop"}
                     alt={car.name}
                     width={600}
                     height={400}
                     className="w-full h-80 object-cover rounded-t-lg"
+                    onError={(e) => {
+                      e.currentTarget.src = "https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?w=800&h=600&fit=crop"
+                    }}
                   />
                   <Button variant="ghost" size="sm" className="absolute top-2 right-2 bg-white/80 hover:bg-white">
                     <Heart className="h-4 w-4" />
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="absolute left-2 top-1/2 transform -translate-y-1/2 bg-white/80 hover:bg-white"
-                    onClick={prevImage}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-white/80 hover:bg-white"
-                    onClick={nextImage}
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div className="flex gap-2 p-4">
-                  {car.images.map((image, index) => (
-                    <button
-                      key={index}
-                      onClick={() => setCurrentImageIndex(index)}
-                      className={`relative w-20 h-16 rounded overflow-hidden border-2 ${
-                        index === currentImageIndex ? "border-blue-500" : "border-gray-200"
-                      }`}
-                    >
-                      <Image
-                        src={image || "/placeholder.svg"}
-                        alt={`${car.name} ${index + 1}`}
-                        width={80}
-                        height={64}
-                        className="w-full h-full object-cover"
-                      />
-                    </button>
-                  ))}
                 </div>
               </CardContent>
             </Card>
@@ -265,7 +394,7 @@ export default function CarDetailPage({ params }: { params: { id: string } }) {
                   <div className="flex items-center gap-1">
                     <Star className="h-5 w-5 fill-yanbaru-sunset text-yanbaru-sunset" />
                     <span className="font-semibold">{car.rating}</span>
-                    <span className="text-gray-500">({car.reviews}件のレビュー)</span>
+                    <span className="text-gray-500">({reviews.length}件のレビュー)</span>
                   </div>
                   <div className="flex items-center gap-1">
                     <Users className="h-4 w-4" />
@@ -309,10 +438,26 @@ export default function CarDetailPage({ params }: { params: { id: string } }) {
             {/* Reviews */}
             <Card className="border-yanbaru-emerald/20 bg-white">
               <CardHeader>
+                <div className="flex justify-between items-center">
                 <CardTitle>レビュー ({reviews.length}件)</CardTitle>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setShowReviewForm(!showReviewForm)}
+                    className="text-yanbaru-emerald border-yanbaru-emerald hover:bg-yanbaru-emerald hover:text-white"
+                  >
+                    {showReviewForm ? 'キャンセル' : 'レビューを投稿'}
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                {reviews.map((review) => (
+                {reviewsLoading ? (
+                  <div className="text-center py-4">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-yanbaru-emerald mx-auto"></div>
+                    <p className="text-gray-500 mt-2">レビューを読み込み中...</p>
+                  </div>
+                ) : reviews.length > 0 ? (
+                  reviews.map((review) => (
                   <div key={review.id} className="border-b border-gray-200 pb-4 last:border-b-0">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
@@ -332,7 +477,81 @@ export default function CarDetailPage({ params }: { params: { id: string } }) {
                     </div>
                     <p className="text-gray-700">{review.comment}</p>
                   </div>
-                ))}
+                ))
+                ) : (
+                  <div className="text-center py-4">
+                    <p className="text-gray-500">まだレビューがありません</p>
+                  </div>
+                )}
+
+                                {/* レビュー投稿フォーム */}
+                {showReviewForm && (
+                  <div className="border-t pt-4 mt-4">
+                    <form onSubmit={handleReviewSubmit} className="space-y-4">
+
+                      <div>
+                        <Label htmlFor="rating" className="text-sm font-medium">
+                          評価
+                        </Label>
+                        <div className="flex items-center gap-2 mt-1">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <button
+                              key={star}
+                              type="button"
+                              onClick={() => {
+                                console.log('Rating clicked:', star)
+                                setNewReview(prev => ({ ...prev, rating: star }))
+                              }}
+                              className="focus:outline-none"
+                            >
+                              <Star
+                                className={`h-5 w-5 ${
+                                  star <= newReview.rating
+                                    ? "fill-yellow-400 text-yellow-400"
+                                    : "text-gray-300"
+                                }`}
+                              />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <Label htmlFor="comment" className="text-sm font-medium">
+                          コメント
+                        </Label>
+                        <textarea
+                          id="comment"
+                          value={newReview.comment}
+                          onChange={(e) => {
+                            console.log('Comment onChange:', e.target.value)
+                            setNewReview(prev => ({ ...prev, comment: e.target.value }))
+                          }}
+                          className="w-full mt-1 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-yanbaru-emerald focus:border-transparent"
+                          rows={3}
+                          placeholder="この車両についての感想を教えてください..."
+                          required
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          type="submit"
+                          disabled={submittingReview}
+                          className="bg-yanbaru-emerald hover:bg-yanbaru-emerald/90 text-white"
+                        >
+                          {submittingReview ? '投稿中...' : 'レビューを投稿'}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setShowReviewForm(false)}
+                          disabled={submittingReview}
+                        >
+                          キャンセル
+                        </Button>
+                      </div>
+                    </form>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -351,7 +570,7 @@ export default function CarDetailPage({ params }: { params: { id: string } }) {
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>利用開始日</Label>
-                    <Popover>
+                    <Popover open={startDateOpen} onOpenChange={setStartDateOpen}>
                       <PopoverTrigger asChild>
                         <Button variant="outline" className="w-full justify-start text-left font-normal bg-transparent">
                           <CalendarIcon className="mr-2 h-4 w-4" />
@@ -359,18 +578,29 @@ export default function CarDetailPage({ params }: { params: { id: string } }) {
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-auto p-0">
-                        <Calendar
+                        <div className="p-3">
+                          <CustomCalendar
                           mode="single"
                           selected={startDate}
                           onSelect={setStartDate}
                           disabled={(date) => date < new Date()}
                         />
+                          <div className="flex justify-end mt-3">
+                            <Button 
+                              size="sm" 
+                              onClick={() => setStartDateOpen(false)}
+                              className="bg-yanbaru-emerald hover:bg-yanbaru-emerald/90 text-white"
+                            >
+                              決定
+                            </Button>
+                          </div>
+                        </div>
                       </PopoverContent>
                     </Popover>
                   </div>
                   <div className="space-y-2">
                     <Label>返却日</Label>
-                    <Popover>
+                    <Popover open={endDateOpen} onOpenChange={setEndDateOpen}>
                       <PopoverTrigger asChild>
                         <Button variant="outline" className="w-full justify-start text-left font-normal bg-transparent">
                           <CalendarIcon className="mr-2 h-4 w-4" />
@@ -378,12 +608,23 @@ export default function CarDetailPage({ params }: { params: { id: string } }) {
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-auto p-0">
-                        <Calendar
+                        <div className="p-3">
+                          <CustomCalendar
                           mode="single"
                           selected={endDate}
                           onSelect={setEndDate}
                           disabled={(date) => date < (startDate || new Date())}
                         />
+                          <div className="flex justify-end mt-3">
+                            <Button 
+                              size="sm" 
+                              onClick={() => setEndDateOpen(false)}
+                              className="bg-yanbaru-emerald hover:bg-yanbaru-emerald/90 text-white"
+                            >
+                              決定
+                            </Button>
+                          </div>
+                        </div>
                       </PopoverContent>
                     </Popover>
                   </div>
@@ -512,24 +753,39 @@ export default function CarDetailPage({ params }: { params: { id: string } }) {
                 </div>
 
                 {/* Booking Button */}
+                {user ? (
+                  <Link href={`/payment?carId=${resolvedParams.id}&startDate=${startDate?.toISOString()}&endDate=${endDate?.toISOString()}&total=${calculateTotal()}`}>
                 <Button
                   className="w-full bg-yanbaru-sunset hover:bg-yanbaru-sunset/90 text-white"
                   disabled={!startDate || !endDate || !agreedToTerms || car.available === 0}
                 >
                   予約・決済へ進む
                 </Button>
+                  </Link>
+                ) : (
+                  <Link href="/login">
+                    <Button
+                      className="w-full bg-yanbaru-sunset hover:bg-yanbaru-sunset/90 text-white"
+                      disabled={!startDate || !endDate || !agreedToTerms || car.available === 0}
+                    >
+                      ログインして予約
+                    </Button>
+                  </Link>
+                )}
 
                 <div className="text-center">
+                  <Link href="/contact">
                   <Button variant="ghost" size="sm" className="gap-2">
                     <MessageCircle className="h-4 w-4" />
                     店舗に問い合わせ
                   </Button>
+                  </Link>
                 </div>
               </CardContent>
             </Card>
 
             {/* Reservation Section */}
-            <ReservationSection carId={car.id} />
+            <ReservationSection carId={resolvedParams.id} />
           </div>
         </div>
       </div>
@@ -537,16 +793,33 @@ export default function CarDetailPage({ params }: { params: { id: string } }) {
   )
 }
 
-function ReservationForm({ carId, userId }) {
+function ReservationForm({ carId, userId }: { carId: string; userId: string }) {
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
   const [message, setMessage] = useState("")
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!startDate || !endDate) {
+      setMessage("日付を選択してください")
+      return
+    }
+
+    const startDateObj = new Date(startDate)
+    const endDateObj = new Date(endDate)
+    const days = Math.ceil((endDateObj.getTime() - startDateObj.getTime()) / (1000 * 60 * 60 * 24))
+
     const { error } = await supabase.from("reservations").insert([
-      { user_id: userId, car_id: carId, start_date: startDate, end_date: endDate, status: "pending" }
+      {
+        user_id: userId,
+        car_id: parseInt(carId),
+        start_date: startDateObj.toISOString().split('T')[0],
+        end_date: endDateObj.toISOString().split('T')[0],
+        total_amount: 5500 * days,
+        status: "pending",
+      }
     ])
+    
     if (error) {
       setMessage("予約に失敗しました: " + error.message)
     } else {
@@ -572,8 +845,8 @@ function ReservationForm({ carId, userId }) {
   )
 }
 
-function ReservationSection({ carId }) {
-  const [user, setUser] = useState(null)
+function ReservationSection({ carId }: { carId: string }) {
+  const [user, setUser] = useState<any>(null)
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data.user))

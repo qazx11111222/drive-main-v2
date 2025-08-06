@@ -1,29 +1,25 @@
-import type { Metadata } from 'next'
-import './globals.css'
-import Link from 'next/link'
-import Image from 'next/image'
-import { Button } from '@/components/ui/button'
-import AnimatedPage from './components/AnimatedPage';
-import { NavLink } from './components/NavLink';
-import { useState } from 'react';
-import Header from './components/Header';
+import type { Metadata } from "next"
+import { Inter } from "next/font/google"
+import "./globals.css"
+
+const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: 'v0 App',
-  description: 'Created with v0',
-  generator: 'v0.dev',
+  title: "沖縄レンタカー",
+  description: "沖縄の美しい景色を車で巡る",
 }
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode
-}>) {
+}) {
   return (
-    <html lang="en">
-      <body>
-        <Header />
-        <AnimatedPage>{children}</AnimatedPage>
+    <html lang="ja">
+      <body className={inter.className}>
+        <div className="min-h-screen bg-yanbaru-sand">
+          {children}
+        </div>
       </body>
     </html>
   )
